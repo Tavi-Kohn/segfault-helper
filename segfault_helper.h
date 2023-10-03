@@ -49,8 +49,8 @@
 #include <unistd.h>
 
 // Define an arbitrary identifier that will be searched for by name in the stack trace
-#ifndef ARBITRATY_IDENTIFIER
-#define ARBITRARY_IDENTIFIER pSoiv6wSaNu8976o543JTrKV2GeV93wQM24i8WteGkNwY8cpdoAntyYE5lk9bT3A
+#ifndef SEGFAULT_HELPER_ARBITRATY_IDENTIFIER
+#define SEGFAULT_HELPER_ARBITRARY_IDENTIFIER K2a9Ek8KGwFRAYZ9n7EiPM9CfQ8oyP99jZFrCyifZCmCiNXZwU7mbgJUKCjWaKUx
 #endif /* ARBITRARY_IDENTIFIER */
 
 #define STRINGIFY_INNER(x) #x
@@ -58,23 +58,23 @@
 #define STRINGIFY(x) STRINGIFY_INNER(x)
 #define CONCAT(x, y) CONCAT_INNER(x, y)
 
-#define MAGIC_HANDLER_IDENTIFIER CONCAT(handle_, ARBITRARY_IDENTIFIER)
-#define MAGIC_HANDLER_STRING STRINGIFY(MAGIC_HANDLER_IDENTIFIER)
+#define SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER CONCAT(handle_, ARBITRARY_IDENTIFIER)
+#define SEGFAULT_HELPER_MAGIC_HANDLER_STRING STRINGIFY(MAGIC_HANDLER_IDENTIFIER)
 
 // The signal stack must be large enough to accomodate the DWARF parsing code
 #ifndef SIGNAL_STACK_SIZE
 #define SIGNAL_STACK_SIZE 1024 * 1024
 #endif
 
-#ifndef CYCLE_DETECTION_DEPTH
-#define CYCLE_DETECTION_DEPTH 10
-#endif
+// #ifndef CYCLE_DETECTION_DEPTH
+// #define CYCLE_DETECTION_DEPTH 10
+// #endif
 
 #ifndef OUTPUT_FILE
 #define OUTPUT_FILE stderr
 #endif
 
-#define DEBUG_ENV_VAR = "SEGFAULT_HELPER_DEBUG"
+#define SEGFAULT_HELPER_DEBUG_ENV_VAR = "SEGFAULT_HELPER_DEBUG"
 
 // Should debug messages be printed
 bool debug_print = false;
@@ -129,7 +129,7 @@ static int getframes_callback(Dwfl_Frame* frame, void* arg) {
         if (state != NULL) {
             // Search for a known function name, and trim it
             if (state->trim_by_name) {
-                if (strstr(function_name, MAGIC_HANDLER_STRING) != NULL) {
+                if (strstr(function_name, SEGFAULT_HELPER_MAGIC_HANDLER_STRING) != NULL) {
                     state->trim_by_name = false;
                 }
                 return DWARF_CB_OK;
@@ -209,7 +209,7 @@ void print_backtrace() {
 }
 
 // Make an arbitrary function name that can be string searched for
-void MAGIC_HANDLER_IDENTIFIER(int signal, siginfo_t* info, void* ucontext) { handler(signal, info, ucontext); }
+void SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER(int signal, siginfo_t* info, void* ucontext) { handler(signal, info, ucontext); }
 
 void handler(int signal, siginfo_t* info, void* ucontext) {
     (void)(ucontext);  // ucontext is not used, suppress unused parameter warnings
@@ -271,7 +271,7 @@ __attribute__((constructor)) void init_segfault_helper(void) {
         }
 
         // Set up signal handler to handle segfaults and provide information about the fault
-        action.sa_sigaction = &MAGIC_HANDLER_IDENTIFIER;
+        action.sa_sigaction = &SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER;
         action.sa_flags = SA_SIGINFO | SA_ONSTACK;
         sigaction(SIGSEGV, &action, &default_action);
 
@@ -293,4 +293,8 @@ __attribute__((destructor)) void destructor(void) {
 #undef STRINGIFY
 #undef CONCAT_INNER
 #undef CONCAT
+
+#undef SIGNAL_STACK_SIZE
+#undef OUTPUT_FILE
+
 #endif  // SEGFAULT_HELPER_H
