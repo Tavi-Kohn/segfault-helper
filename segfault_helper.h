@@ -49,7 +49,7 @@
 #include <unistd.h>
 
 // Define an arbitrary identifier that will be searched for by name in the stack trace
-#ifndef SEGFAULT_HELPER_ARBITRATY_IDENTIFIER
+#ifndef SEGFAULT_HELPER_ARBITRARY_IDENTIFIER
 #define SEGFAULT_HELPER_ARBITRARY_IDENTIFIER K2a9Ek8KGwFRAYZ9n7EiPM9CfQ8oyP99jZFrCyifZCmCiNXZwU7mbgJUKCjWaKUx
 #endif /* ARBITRARY_IDENTIFIER */
 
@@ -58,8 +58,8 @@
 #define STRINGIFY(x) STRINGIFY_INNER(x)
 #define CONCAT(x, y) CONCAT_INNER(x, y)
 
-#define SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER CONCAT(handle_, ARBITRARY_IDENTIFIER)
-#define SEGFAULT_HELPER_MAGIC_HANDLER_STRING STRINGIFY(MAGIC_HANDLER_IDENTIFIER)
+#define SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER CONCAT(handle_, SEGFAULT_HELPER_ARBITRARY_IDENTIFIER)
+#define SEGFAULT_HELPER_MAGIC_HANDLER_STRING STRINGIFY(SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER)
 
 // The signal stack must be large enough to accomodate the DWARF parsing code
 #ifndef SIGNAL_STACK_SIZE
@@ -74,7 +74,9 @@
 #define OUTPUT_FILE stderr
 #endif
 
-#define SEGFAULT_HELPER_DEBUG_ENV_VAR = "SEGFAULT_HELPER_DEBUG"
+#ifndef SEGFAULT_HELPER_DEBUG_ENV_VAR
+#define SEGFAULT_HELPER_DEBUG_ENV_VAR "SEGFAULT_HELPER_DEBUG"
+#endif
 
 // Should debug messages be printed
 bool debug_print = false;
@@ -112,6 +114,9 @@ struct trim_opts {
  * @return int Dwfl callback status code (DWARF_CB_OK or DWARF_CB_ABORT)
  */
 static int getframes_callback(Dwfl_Frame* frame, void* arg) {
+    if (debug_print) {
+        fprintf(OUTPUT_FILE, "Checking frame %p\n", (void*)frame);
+    }
     struct trim_opts* state = (struct trim_opts*)arg;
 
     Dwfl_Thread* thread = dwfl_frame_thread(frame);
@@ -122,8 +127,6 @@ static int getframes_callback(Dwfl_Frame* frame, void* arg) {
         const char* module_filename;
         const char* module_name = dwfl_module_info(module, NULL, NULL, NULL, NULL, NULL, &module_filename, NULL);
         const char* function_name = dwfl_module_addrname(module, pc);
-        Dwarf_Addr pc;
-        dwfl_frame_pc(frame, &pc, NULL);
 
         // Determine if this frame should be trimmed
         if (state != NULL) {
@@ -131,8 +134,8 @@ static int getframes_callback(Dwfl_Frame* frame, void* arg) {
             if (state->trim_by_name) {
                 if (strstr(function_name, SEGFAULT_HELPER_MAGIC_HANDLER_STRING) != NULL) {
                     state->trim_by_name = false;
+                    return DWARF_CB_OK;
                 }
-                return DWARF_CB_OK;
             }
             // Trim until state->skip_count is 0
             if (state->skip_count > 0) {
@@ -141,14 +144,6 @@ static int getframes_callback(Dwfl_Frame* frame, void* arg) {
             }
         }
 
-        // GElf_Off offset;
-        // GElf_Sym symbol;
-        // GElf_Word shndxp;
-        // Dwarf_Addr bias;
-        // dwfl_module_addrinfo(module, pc, &offset, &symbol, &shndxp, NULL, &bias);
-        // fprintf(OUTPUT_FILE, "%lx %d %d\n", pc, bias, offset);
-        // fprintf(OUTPUT_FILE, "in module '%s'\n", module_name);
-        // fprintf(OUTPUT_FILE, "in module file '%s'\n", module_filename);
         fprintf(OUTPUT_FILE, "%-20s ", function_name);
 
         Dwfl_Line* line = dwfl_module_getsrc(module, pc);
@@ -168,7 +163,7 @@ static int getframes_callback(Dwfl_Frame* frame, void* arg) {
 
 static int getthreads_callback(Dwfl_Thread* thread, void* arg) {
     (void)(arg);                         // arg is not used, suppress unused parameter warnings
-    struct trim_opts state = {true, 1};  // Skip all segfault_helper related frames, as well as 1 additional stack frame
+    struct trim_opts state = {true, 4};  // Skip all segfault_helper related frames, as well as 4 additional stack frames
     printf("Backtracing Thread %d\n", dwfl_thread_tid(thread));
     dwfl_thread_getframes(thread, getframes_callback, (void*)&state);
     return DWARF_CB_OK;
@@ -205,6 +200,7 @@ void print_backtrace() {
             return;
         }
         dwfl_end(session);
+        kill(pid, SIGTERM);  // Terminate child process now that tracing is complete
     }
 }
 
@@ -250,7 +246,7 @@ void handler(int signal, siginfo_t* info, void* ucontext) {
 __attribute__((constructor)) void init_segfault_helper(void) {
     if (!init_complete) {
         init_complete = true;
-        if (getenv("SEGFAULT_HELPER_DEBUG") != NULL) {
+        if (getenv(SEGFAULT_HELPER_DEBUG_ENV_VAR) != NULL) {
             debug_print = true;
         } else {
             debug_print = false;
@@ -271,6 +267,7 @@ __attribute__((constructor)) void init_segfault_helper(void) {
         }
 
         // Set up signal handler to handle segfaults and provide information about the fault
+        // action = (struct sigaction){.sa_sigaction = &SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER, .sa_flags = SA_SIGINFO | SA_ONSTACK};
         action.sa_sigaction = &SEGFAULT_HELPER_MAGIC_HANDLER_IDENTIFIER;
         action.sa_flags = SA_SIGINFO | SA_ONSTACK;
         sigaction(SIGSEGV, &action, &default_action);
